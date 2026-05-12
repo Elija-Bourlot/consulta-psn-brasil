@@ -28,31 +28,38 @@ app.get("/api/search", async (req, res) => {
       });
     }
 
-    const url =
-      `https://store.playstation.com/store/api/chihiro/00_09_000/tumbler/${REGION}/${LANGUAGE}/${STORE_ID}/${encodeURIComponent(query)}?suggested_size=30&mode=game`;
+    const searchTerms = createSearchVariations(query);
+    let allGames = [];
 
-    const response = await fetch(url, {
-      headers: {
-        "Accept": "application/json",
-        "User-Agent": "Mozilla/5.0"
-      }
-    });
-
-    if (!response.ok) {
-      return res.status(response.status).json({
-        ok: false,
-        error: `Erro ao consultar a PS Store. Código: ${response.status}`
-      });
+    for (const term of searchTerms) {
+      const data = await searchPlayStationStore(term);
+      const games = normalizeResults(data, query);
+      allGames.push(...games);
     }
 
-    const data = await response.json();
-    const games = normalizeResults(data, query);
+    allGames = removeDuplicates(allGames);
+
+    allGames.sort((a, b) => {
+      const cleanQuery = normalizeText(query);
+      const aTitle = normalizeText(a.name);
+      const bTitle = normalizeText(b.name);
+
+      const aExact = aTitle === cleanQuery ? 0 : 1;
+      const bExact = bTitle === cleanQuery ? 0 : 1;
+
+      if (aExact !== bExact) return aExact - bExact;
+
+      const aStarts = aTitle.startsWith(cleanQuery) ? 0 : 1;
+      const bStarts = bTitle.startsWith(cleanQuery) ? 0 : 1;
+
+      return aStarts - bStarts;
+    });
 
     return res.json({
       ok: true,
       query,
-      total: games.length,
-      games
+      total: allGames.length,
+      games: allGames
     });
 
   } catch (error) {
@@ -65,7 +72,40 @@ app.get("/api/search", async (req, res) => {
   }
 });
 
-function normalizeResults(data, query) {
+async function searchPlayStationStore(query) {
+  const url =
+    `https://store.playstation.com/store/api/chihiro/00_09_000/tumbler/${REGION}/${LANGUAGE}/${STORE_ID}/${encodeURIComponent(query)}?suggested_size=50&mode=game`;
+
+  const response = await fetch(url, {
+    headers: {
+      "Accept": "application/json",
+      "User-Agent": "Mozilla/5.0"
+    }
+  });
+
+  if (!response.ok) {
+    throw new Error(`Erro ao consultar a PS Store. Código: ${response.status}`);
+  }
+
+  return await response.json();
+}
+
+function createSearchVariations(query) {
+  const original = String(query || "").trim();
+
+  const withoutApostrophe = original.replace(/[’']/g, "");
+  const withSpace = original.replace(/[’']/g, " ");
+  const normalized = normalizeText(original);
+
+  return [...new Set([
+    original,
+    withoutApostrophe,
+    withSpace,
+    normalized
+  ].filter(Boolean))];
+}
+
+function normalizeResults(data, originalQuery) {
   let items = [];
 
   if (Array.isArray(data.links)) {
@@ -80,21 +120,42 @@ function normalizeResults(data, query) {
     items = findProductArrays(data);
   }
 
-  const cleanQuery = normalizeText(query);
+  const cleanQuery = normalizeText(originalQuery);
 
-  const games = items
+  return items
     .map(extractGame)
     .filter(Boolean)
     .filter(game => {
       const title = normalizeText(game.name);
-      return title.includes(cleanQuery) || cleanQuery.includes(title);
-    });
 
-  return removeDuplicates(games).sort((a, b) => {
-    const aExact = normalizeText(a.name) === cleanQuery ? 0 : 1;
-    const bExact = normalizeText(b.name) === cleanQuery ? 0 : 1;
-    return aExact - bExact;
-  });
+      return (
+        title.includes(cleanQuery) ||
+        cleanQuery.includes(title) ||
+        hasCommonWords(title, cleanQuery)
+      );
+    });
+}
+
+function hasCommonWords(title, query) {
+  const ignoredWords = new Set([
+    "the", "a", "an", "of", "and", "or",
+    "edition", "deluxe", "standard", "ultimate",
+    "ps4", "ps5", "ps4 ps5"
+  ]);
+
+  const titleWords = title
+    .split(" ")
+    .filter(word => word.length > 2 && !ignoredWords.has(word));
+
+  const queryWords = query
+    .split(" ")
+    .filter(word => word.length > 2 && !ignoredWords.has(word));
+
+  if (!titleWords.length || !queryWords.length) return false;
+
+  const matches = queryWords.filter(word => titleWords.includes(word));
+
+  return matches.length >= Math.min(2, queryWords.length);
 }
 
 function findProductArrays(obj) {
@@ -111,7 +172,8 @@ function findProductArrays(obj) {
           item.name ||
           item.title_name ||
           item.title ||
-          item.localizedStoreDisplayClassification ||
+          item.productName ||
+          item.localizedName ||
           item.playable_platform ||
           item.platforms ||
           item.skus
@@ -167,35 +229,69 @@ function extractGame(item) {
 function extractPlatforms(item) {
   const platforms = [];
 
-  if (Array.isArray(item.playable_platform)) platforms.push(...item.playable_platform);
-  if (Array.isArray(item.platforms)) platforms.push(...item.platforms);
-  if (Array.isArray(item.platform)) platforms.push(...item.platform);
+  function addPlatform(value) {
+    if (!value) return;
 
-  if (typeof item.platform === "string") platforms.push(item.platform);
-  if (typeof item.playable_platform === "string") platforms.push(item.playable_platform);
+    const text = String(value).toUpperCase().trim();
 
-  if (item.default_sku && Array.isArray(item.default_sku.playable_platform)) {
-    platforms.push(...item.default_sku.playable_platform);
+    if (
+      text === "PS4" ||
+      text === "PLAYSTATION 4" ||
+      text === "PLAYSTATION®4"
+    ) {
+      platforms.push("PS4");
+    }
+
+    if (
+      text === "PS5" ||
+      text === "PLAYSTATION 5" ||
+      text === "PLAYSTATION®5"
+    ) {
+      platforms.push("PS5");
+    }
+  }
+
+  function readArray(values) {
+    if (!Array.isArray(values)) return;
+    values.forEach(addPlatform);
+  }
+
+  readArray(item.playable_platform);
+  readArray(item.platforms);
+  readArray(item.platform);
+  readArray(item.platform_types);
+  readArray(item.console_platforms);
+
+  addPlatform(item.platform);
+  addPlatform(item.playable_platform);
+  addPlatform(item.platformType);
+  addPlatform(item.consolePlatform);
+
+  if (item.default_sku) {
+    readArray(item.default_sku.playable_platform);
+    readArray(item.default_sku.platforms);
+    readArray(item.default_sku.platform_types);
+    readArray(item.default_sku.console_platforms);
+
+    addPlatform(item.default_sku.platform);
+    addPlatform(item.default_sku.platformType);
+    addPlatform(item.default_sku.consolePlatform);
   }
 
   if (Array.isArray(item.skus)) {
     item.skus.forEach(sku => {
-      if (Array.isArray(sku.playable_platform)) platforms.push(...sku.playable_platform);
-      if (typeof sku.platform === "string") platforms.push(sku.platform);
+      readArray(sku.playable_platform);
+      readArray(sku.platforms);
+      readArray(sku.platform_types);
+      readArray(sku.console_platforms);
+
+      addPlatform(sku.platform);
+      addPlatform(sku.platformType);
+      addPlatform(sku.consolePlatform);
     });
   }
 
-  const fullText = JSON.stringify(item).toUpperCase();
-
-  if (fullText.includes("PS4")) platforms.push("PS4");
-  if (fullText.includes("PS5")) platforms.push("PS5");
-
-  return [...new Set(
-    platforms
-      .map(p => String(p).toUpperCase())
-      .filter(p => p.includes("PS4") || p.includes("PS5"))
-      .map(p => p.includes("PS5") ? "PS5" : "PS4")
-  )];
+  return [...new Set(platforms)];
 }
 
 function classifyPlatform(platforms) {
@@ -276,8 +372,10 @@ function extractImage(item) {
 
   if (Array.isArray(item.images)) images.push(...item.images);
   if (Array.isArray(item.media)) images.push(...item.media);
+
   if (item.image_url) images.push({ url: item.image_url });
   if (item.thumbnail_url) images.push({ url: item.thumbnail_url });
+  if (item.cover) images.push({ url: item.cover });
 
   const image = images.find(img =>
     img &&
@@ -304,7 +402,7 @@ function removeDuplicates(games) {
   const map = new Map();
 
   games.forEach(game => {
-    const key = normalizeText(game.name) + "|" + game.platformType;
+    const key = normalizeText(game.name) + "|" + game.platformType + "|" + game.currentPrice;
 
     if (!map.has(key)) {
       map.set(key, game);
@@ -319,7 +417,7 @@ function normalizeText(text) {
     .toLowerCase()
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[™®:()\-–—]/g, " ")
+    .replace(/[™®:()\-–—.,!?'’"]/g, " ")
     .replace(/\s+/g, " ")
     .trim();
 }
