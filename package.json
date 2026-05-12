@@ -1,0 +1,14 @@
+{
+  "name": "consulta-psn-brasil",
+  "version": "1.0.0",
+  "description": "Consulta jogos na PS Store Brasil e identifica PS4, PS5, preço e promoção.",
+  "main": "server.js",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.18.3",
+    "cors": "^2.8.5"
+  }
+}
