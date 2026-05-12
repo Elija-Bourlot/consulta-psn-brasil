@@ -1,0 +1,501 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <title>Consulta PSN Brasil</title>
+
+  <style>
+    :root {
+      --bg: #f3f5f8;
+      --card: #ffffff;
+      --text: #18202a;
+      --muted: #6b7280;
+      --line: #d7dde5;
+      --blue: #006fcd;
+      --green: #16a34a;
+      --orange: #f97316;
+      --red: #dc2626;
+      --shadow: 0 8px 24px rgba(0,0,0,.08);
+      --radius: 18px;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: Arial, Helvetica, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+    }
+
+    header {
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      background: linear-gradient(135deg, #0057b8, #003c8f);
+      color: white;
+      padding: 18px 14px;
+      box-shadow: var(--shadow);
+    }
+
+    header h1 {
+      margin: 0;
+      font-size: 21px;
+    }
+
+    header p {
+      margin: 6px 0 0;
+      font-size: 13px;
+      opacity: .9;
+    }
+
+    main {
+      max-width: 820px;
+      margin: 0 auto;
+      padding: 14px;
+    }
+
+    .card {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      padding: 14px;
+      box-shadow: var(--shadow);
+      margin-bottom: 14px;
+    }
+
+    label {
+      display: block;
+      font-weight: bold;
+      font-size: 14px;
+      margin-bottom: 7px;
+    }
+
+    input {
+      width: 100%;
+      min-height: 46px;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 0 13px;
+      font-size: 16px;
+      outline: none;
+      background: #fff;
+    }
+
+    input:focus {
+      border-color: var(--blue);
+      box-shadow: 0 0 0 3px rgba(0,111,205,.13);
+    }
+
+    .row {
+      display: flex;
+      gap: 10px;
+      margin-top: 10px;
+    }
+
+    button {
+      border: 0;
+      border-radius: 14px;
+      min-height: 44px;
+      padding: 0 16px;
+      font-size: 15px;
+      font-weight: bold;
+      cursor: pointer;
+      background: var(--blue);
+      color: white;
+      flex: 1;
+    }
+
+    button.secondary {
+      background: #111827;
+    }
+
+    button.whatsapp {
+      background: #16a34a;
+    }
+
+    button:disabled {
+      opacity: .55;
+      cursor: not-allowed;
+    }
+
+    .status {
+      font-size: 14px;
+      color: var(--muted);
+      margin-top: 10px;
+      line-height: 1.4;
+    }
+
+    .result-card {
+      display: grid;
+      grid-template-columns: 86px 1fr;
+      gap: 12px;
+      align-items: start;
+    }
+
+    .cover {
+      width: 86px;
+      height: 86px;
+      border-radius: 14px;
+      object-fit: cover;
+      background: #e5e7eb;
+      border: 1px solid var(--line);
+    }
+
+    .game-title {
+      font-size: 17px;
+      font-weight: bold;
+      margin: 0 0 7px;
+    }
+
+    .badges {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin: 8px 0;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      min-height: 24px;
+      padding: 2px 9px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: bold;
+      background: #e5e7eb;
+      color: #111827;
+    }
+
+    .badge.ps4 {
+      background: #dbeafe;
+      color: #1d4ed8;
+    }
+
+    .badge.ps5 {
+      background: #ede9fe;
+      color: #6d28d9;
+    }
+
+    .badge.sale {
+      background: #ffedd5;
+      color: #c2410c;
+    }
+
+    .badge.normal {
+      background: #f3f4f6;
+      color: #374151;
+    }
+
+    .price {
+      font-size: 15px;
+      line-height: 1.45;
+      margin-top: 6px;
+    }
+
+    .price strong {
+      font-size: 17px;
+    }
+
+    .old-price {
+      color: var(--muted);
+      text-decoration: line-through;
+      margin-left: 6px;
+    }
+
+    .small {
+      font-size: 12px;
+      color: var(--muted);
+      line-height: 1.4;
+      margin-top: 8px;
+    }
+
+    .actions {
+      margin-top: 10px;
+    }
+
+    .link-btn {
+      display: inline-block;
+      text-decoration: none;
+      background: #eef2ff;
+      color: #1e40af;
+      padding: 8px 10px;
+      border-radius: 12px;
+      font-size: 13px;
+      font-weight: bold;
+    }
+
+    .empty {
+      text-align: center;
+      color: var(--muted);
+      padding: 22px 8px;
+      font-size: 15px;
+    }
+
+    .error {
+      background: #fee2e2;
+      color: #991b1b;
+      border: 1px solid #fecaca;
+      padding: 10px;
+      border-radius: 14px;
+      font-size: 14px;
+      line-height: 1.4;
+    }
+
+    textarea {
+      width: 100%;
+      min-height: 160px;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 12px;
+      font-size: 14px;
+      resize: vertical;
+      font-family: Arial, Helvetica, sans-serif;
+    }
+
+    footer {
+      text-align: center;
+      color: var(--muted);
+      font-size: 12px;
+      padding: 20px 14px 30px;
+    }
+
+    @media (max-width: 420px) {
+      .result-card {
+        grid-template-columns: 72px 1fr;
+      }
+
+      .cover {
+        width: 72px;
+        height: 72px;
+      }
+
+      header h1 {
+        font-size: 19px;
+      }
+
+      .row {
+        flex-direction: column;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <header>
+    <h1>Consulta PSN Brasil</h1>
+    <p>Busca jogo na Store Brasil e identifica PS4, PS5, preço e promoção.</p>
+  </header>
+
+  <main>
+    <section class="card">
+      <label for="gameInput">Nome do jogo</label>
+      <input id="gameInput" type="text" placeholder="Ex: Dead Space, Elden Ring, No Man's Sky" />
+
+      <div class="row">
+        <button id="searchBtn" onclick="searchGame()">Buscar</button>
+        <button class="secondary" onclick="clearSearch()">Limpar</button>
+      </div>
+
+      <div id="status" class="status">
+        Digite o nome de um jogo e toque em buscar.
+      </div>
+    </section>
+
+    <section id="results"></section>
+
+    <section id="whatsappBox" class="card" style="display:none;">
+      <label>Texto pronto para WhatsApp</label>
+      <textarea id="whatsappText" readonly></textarea>
+
+      <div class="row">
+        <button class="whatsapp" onclick="copyWhatsapp()">Copiar texto</button>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    Os dados vêm da PlayStation Store Brasil e podem mudar a qualquer momento.
+  </footer>
+
+  <script>
+    const input = document.getElementById("gameInput");
+    const statusBox = document.getElementById("status");
+    const resultsBox = document.getElementById("results");
+    const searchBtn = document.getElementById("searchBtn");
+    const whatsappBox = document.getElementById("whatsappBox");
+    const whatsappText = document.getElementById("whatsappText");
+
+    let currentResults = [];
+
+    input.addEventListener("keydown", function(event) {
+      if (event.key === "Enter") {
+        searchGame();
+      }
+    });
+
+    function setStatus(text) {
+      statusBox.textContent = text;
+    }
+
+    function clearSearch() {
+      input.value = "";
+      resultsBox.innerHTML = "";
+      whatsappBox.style.display = "none";
+      whatsappText.value = "";
+      currentResults = [];
+      setStatus("Digite o nome de um jogo e toque em buscar.");
+      input.focus();
+    }
+
+    async function searchGame() {
+      const query = input.value.trim();
+
+      if (!query) {
+        setStatus("Digite o nome do jogo primeiro.");
+        return;
+      }
+
+      searchBtn.disabled = true;
+      resultsBox.innerHTML = "";
+      whatsappBox.style.display = "none";
+      whatsappText.value = "";
+      currentResults = [];
+
+      setStatus("Buscando na PS Store Brasil...");
+
+      try {
+        const response = await fetch(`/api/search?q=${encodeURIComponent(query)}`);
+        const data = await response.json();
+
+        if (!data.ok) {
+          throw new Error(data.error || "Erro ao buscar.");
+        }
+
+        currentResults = data.games || [];
+
+        if (!currentResults.length) {
+          resultsBox.innerHTML = `
+            <div class="card empty">
+              Nenhum resultado encontrado para: <strong>${escapeHtml(query)}</strong>
+            </div>
+          `;
+
+          setStatus("Busca concluída, mas nenhum jogo foi encontrado.");
+          return;
+        }
+
+        renderResults(currentResults);
+        createWhatsappText(currentResults);
+
+        setStatus(`${currentResults.length} resultado(s) encontrado(s). Confira se o título corresponde exatamente ao jogo desejado.`);
+
+      } catch (error) {
+        console.error(error);
+
+        resultsBox.innerHTML = `
+          <div class="card error">
+            Não consegui consultar a PS Store agora.<br><br>
+            ${escapeHtml(error.message)}
+          </div>
+        `;
+
+        setStatus("Erro ao buscar.");
+      } finally {
+        searchBtn.disabled = false;
+      }
+    }
+
+    function renderResults(games) {
+      resultsBox.innerHTML = games.map(game => {
+        const hasPS4 = game.platforms.includes("PS4");
+        const hasPS5 = game.platforms.includes("PS5");
+
+        return `
+          <section class="card result-card">
+            ${game.image ? `<img class="cover" src="${escapeHtml(game.image)}" alt="">` : `<div class="cover"></div>`}
+
+            <div>
+              <h2 class="game-title">${escapeHtml(game.name)}</h2>
+
+              <div class="badges">
+                ${hasPS4 ? `<span class="badge ps4">PS4</span>` : ""}
+                ${hasPS5 ? `<span class="badge ps5">PS5</span>` : ""}
+                <span class="badge normal">${escapeHtml(game.platformType)}</span>
+                ${game.onSale ? `<span class="badge sale">Em promoção</span>` : `<span class="badge normal">Sem promoção detectada</span>`}
+              </div>
+
+              <div class="price">
+                <strong>${escapeHtml(game.currentPrice)}</strong>
+                ${game.originalPrice ? `<span class="old-price">${escapeHtml(game.originalPrice)}</span>` : ""}
+                ${game.discount ? `<br>Desconto: ${escapeHtml(String(game.discount))}` : ""}
+              </div>
+
+              <div class="actions">
+                <a class="link-btn" href="${escapeHtml(game.storeUrl)}" target="_blank" rel="noopener">
+                  Abrir na PS Store
+                </a>
+              </div>
+
+              <div class="small">
+                Classificação feita automaticamente com base nos dados retornados pela Store.
+              </div>
+            </div>
+          </section>
+        `;
+      }).join("");
+    }
+
+    function createWhatsappText(games) {
+      const lines = [];
+
+      lines.push("🎮 *Consulta PSN Brasil*");
+      lines.push("");
+
+      games.forEach(game => {
+        lines.push(`*${game.name}*`);
+        lines.push(`Plataforma: ${game.platformType}`);
+        lines.push(`Preço: ${game.currentPrice}`);
+
+        if (game.originalPrice) {
+          lines.push(`Preço original: ${game.originalPrice}`);
+        }
+
+        if (game.discount) {
+          lines.push(`Desconto: ${game.discount}`);
+        }
+
+        lines.push(`Promoção: ${game.onSale ? "Sim" : "Não detectada"}`);
+        lines.push("");
+      });
+
+      whatsappText.value = lines.join("\n");
+      whatsappBox.style.display = "block";
+    }
+
+    async function copyWhatsapp() {
+      try {
+        await navigator.clipboard.writeText(whatsappText.value);
+        alert("Texto copiado!");
+      } catch {
+        whatsappText.select();
+        document.execCommand("copy");
+        alert("Texto copiado!");
+      }
+    }
+
+    function escapeHtml(text) {
+      return String(text ?? "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#039;");
+    }
+  </script>
+</body>
+</html>
