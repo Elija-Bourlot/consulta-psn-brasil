@@ -32,28 +32,24 @@ app.get("/api/search", async (req, res) => {
     let allGames = [];
 
     for (const term of searchTerms) {
-      const data = await searchPlayStationStore(term);
-      const games = normalizeResults(data, query);
-      allGames.push(...games);
+      try {
+        const data = await searchPlayStationStore(term);
+        const games = normalizeResults(data, query);
+        allGames.push(...games);
+      } catch (error) {
+        console.log(`Falha buscando "${term}":`, error.message);
+      }
     }
 
     allGames = removeDuplicates(allGames);
 
-    allGames.sort((a, b) => {
-      const cleanQuery = normalizeText(query);
-      const aTitle = normalizeText(a.name);
-      const bTitle = normalizeText(b.name);
-
-      const aExact = aTitle === cleanQuery ? 0 : 1;
-      const bExact = bTitle === cleanQuery ? 0 : 1;
-
-      if (aExact !== bExact) return aExact - bExact;
-
-      const aStarts = aTitle.startsWith(cleanQuery) ? 0 : 1;
-      const bStarts = bTitle.startsWith(cleanQuery) ? 0 : 1;
-
-      return aStarts - bStarts;
-    });
+    allGames = allGames
+      .map(game => ({
+        ...game,
+        matchScore: calculateMatchScore(query, game.name)
+      }))
+      .filter(game => game.matchScore >= 25)
+      .sort((a, b) => b.matchScore - a.matchScore);
 
     return res.json({
       ok: true,
@@ -74,7 +70,7 @@ app.get("/api/search", async (req, res) => {
 
 async function searchPlayStationStore(query) {
   const url =
-    `https://store.playstation.com/store/api/chihiro/00_09_000/tumbler/${REGION}/${LANGUAGE}/${STORE_ID}/${encodeURIComponent(query)}?suggested_size=50&mode=game`;
+    `https://store.playstation.com/store/api/chihiro/00_09_000/tumbler/${REGION}/${LANGUAGE}/${STORE_ID}/${encodeURIComponent(query)}?suggested_size=80&mode=game`;
 
   const response = await fetch(url, {
     headers: {
@@ -92,17 +88,26 @@ async function searchPlayStationStore(query) {
 
 function createSearchVariations(query) {
   const original = String(query || "").trim();
+  const clean = normalizeText(original);
+  const words = clean.split(" ").filter(Boolean);
 
-  const withoutApostrophe = original.replace(/[’']/g, "");
-  const withSpace = original.replace(/[’']/g, " ");
-  const normalized = normalizeText(original);
-
-  return [...new Set([
+  const variations = [
     original,
-    withoutApostrophe,
-    withSpace,
-    normalized
-  ].filter(Boolean))];
+    clean,
+    original.replace(/[’']/g, ""),
+    original.replace(/[’']/g, " "),
+    words.join(" ")
+  ];
+
+  if (words.length >= 2) {
+    variations.push(words.slice(0, 2).join(" "));
+  }
+
+  if (words.length >= 3) {
+    variations.push(words.slice(0, 3).join(" "));
+  }
+
+  return [...new Set(variations.filter(Boolean))];
 }
 
 function normalizeResults(data, originalQuery) {
@@ -120,42 +125,10 @@ function normalizeResults(data, originalQuery) {
     items = findProductArrays(data);
   }
 
-  const cleanQuery = normalizeText(originalQuery);
-
   return items
     .map(extractGame)
     .filter(Boolean)
-    .filter(game => {
-      const title = normalizeText(game.name);
-
-      return (
-        title.includes(cleanQuery) ||
-        cleanQuery.includes(title) ||
-        hasCommonWords(title, cleanQuery)
-      );
-    });
-}
-
-function hasCommonWords(title, query) {
-  const ignoredWords = new Set([
-    "the", "a", "an", "of", "and", "or",
-    "edition", "deluxe", "standard", "ultimate",
-    "ps4", "ps5", "ps4 ps5"
-  ]);
-
-  const titleWords = title
-    .split(" ")
-    .filter(word => word.length > 2 && !ignoredWords.has(word));
-
-  const queryWords = query
-    .split(" ")
-    .filter(word => word.length > 2 && !ignoredWords.has(word));
-
-  if (!titleWords.length || !queryWords.length) return false;
-
-  const matches = queryWords.filter(word => titleWords.includes(word));
-
-  return matches.length >= Math.min(2, queryWords.length);
+    .filter(game => calculateMatchScore(originalQuery, game.name) >= 25);
 }
 
 function findProductArrays(obj) {
@@ -207,7 +180,7 @@ function extractGame(item) {
 
   if (!name) return null;
 
-  const platforms = extractPlatforms(item);
+  const platforms = extractPlatforms(item, name);
   const price = extractPrice(item);
   const image = extractImage(item);
   const storeUrl = extractStoreUrl(item, name);
@@ -226,18 +199,22 @@ function extractGame(item) {
   };
 }
 
-function extractPlatforms(item) {
+function extractPlatforms(item, title = "") {
   const platforms = [];
 
   function addPlatform(value) {
     if (!value) return;
 
-    const text = String(value).toUpperCase().trim();
+    const text = String(value)
+      .toUpperCase()
+      .replace("PLAYSTATION®", "PLAYSTATION ")
+      .replace(/\s+/g, " ")
+      .trim();
 
     if (
       text === "PS4" ||
       text === "PLAYSTATION 4" ||
-      text === "PLAYSTATION®4"
+      text === "PLAYSTATION4"
     ) {
       platforms.push("PS4");
     }
@@ -245,7 +222,7 @@ function extractPlatforms(item) {
     if (
       text === "PS5" ||
       text === "PLAYSTATION 5" ||
-      text === "PLAYSTATION®5"
+      text === "PLAYSTATION5"
     ) {
       platforms.push("PS5");
     }
@@ -291,7 +268,24 @@ function extractPlatforms(item) {
     });
   }
 
+  addPlatformsFromTitle(title, platforms);
+
   return [...new Set(platforms)];
+}
+
+function addPlatformsFromTitle(title, platforms) {
+  const text = String(title || "").toUpperCase();
+
+  const mentionsPS4 =
+    /\bPS4\b/.test(text) ||
+    /PLAYSTATION\s*4/.test(text);
+
+  const mentionsPS5 =
+    /\bPS5\b/.test(text) ||
+    /PLAYSTATION\s*5/.test(text);
+
+  if (mentionsPS4) platforms.push("PS4");
+  if (mentionsPS5) platforms.push("PS5");
 }
 
 function classifyPlatform(platforms) {
@@ -402,10 +396,18 @@ function removeDuplicates(games) {
   const map = new Map();
 
   games.forEach(game => {
-    const key = normalizeText(game.name) + "|" + game.platformType + "|" + game.currentPrice;
+    const key = normalizeText(game.name) + "|" + game.currentPrice;
 
     if (!map.has(key)) {
       map.set(key, game);
+    } else {
+      const existing = map.get(key);
+
+      const existingPlatforms = new Set(existing.platforms);
+      game.platforms.forEach(p => existingPlatforms.add(p));
+
+      existing.platforms = [...existingPlatforms];
+      existing.platformType = classifyPlatform(existing.platforms);
     }
   });
 
@@ -417,9 +419,67 @@ function normalizeText(text) {
     .toLowerCase()
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[™®:()\-–—.,!?'’"]/g, " ")
+    .replace(/[’']/g, "")
+    .replace(/[™®:()\-–—.,!?"&+/\\|[\]{}]/g, " ")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+function calculateMatchScore(query, title) {
+  const q = normalizeText(query);
+  const t = normalizeText(title);
+
+  if (!q || !t) return 0;
+
+  if (q === t) return 100;
+  if (t.startsWith(q)) return 90;
+  if (t.includes(q)) return 80;
+
+  const qWords = q.split(" ").filter(word => word.length > 1);
+  const tWords = t.split(" ").filter(word => word.length > 1);
+
+  if (!qWords.length || !tWords.length) return 0;
+
+  let matches = 0;
+
+  for (const qWord of qWords) {
+    if (tWords.some(tWord => tWord === qWord || tWord.includes(qWord) || qWord.includes(tWord))) {
+      matches++;
+    }
+  }
+
+  const wordScore = Math.round((matches / qWords.length) * 70);
+  const distanceScore = Math.max(0, 30 - levenshteinDistance(q, t));
+
+  return Math.min(100, wordScore + distanceScore);
+}
+
+function levenshteinDistance(a, b) {
+  const matrix = [];
+
+  for (let i = 0; i <= b.length; i++) {
+    matrix[i] = [i];
+  }
+
+  for (let j = 0; j <= a.length; j++) {
+    matrix[0][j] = j;
+  }
+
+  for (let i = 1; i <= b.length; i++) {
+    for (let j = 1; j <= a.length; j++) {
+      if (b.charAt(i - 1) === a.charAt(j - 1)) {
+        matrix[i][j] = matrix[i - 1][j - 1];
+      } else {
+        matrix[i][j] = Math.min(
+          matrix[i - 1][j - 1] + 1,
+          matrix[i][j - 1] + 1,
+          matrix[i - 1][j] + 1
+        );
+      }
+    }
+  }
+
+  return matrix[b.length][a.length];
 }
 
 app.listen(PORT, () => {
