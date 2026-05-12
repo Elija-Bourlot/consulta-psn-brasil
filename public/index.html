@@ -186,6 +186,11 @@
       color: #c2410c;
     }
 
+    .badge.warning {
+      background: #fef3c7;
+      color: #92400e;
+    }
+
     .badge.normal {
       background: #f3f4f6;
       color: #374151;
@@ -288,7 +293,7 @@
 <body>
   <header>
     <h1>Consulta PSN Brasil</h1>
-    <p>Busca jogo na Store Brasil e identifica PS4, PS5, preço e promoção.</p>
+    <p>Busca jogo na Store Brasil e tenta identificar PS4, PS5, preço e promoção.</p>
   </header>
 
   <main>
@@ -319,7 +324,7 @@
   </main>
 
   <footer>
-    Os dados vêm da PlayStation Store Brasil e podem mudar a qualquer momento.
+    Os dados vêm da PlayStation Store Brasil. Quando a plataforma aparecer como “Não identificado”, confira no link oficial.
   </footer>
 
   <script>
@@ -382,6 +387,8 @@
           resultsBox.innerHTML = `
             <div class="card empty">
               Nenhum resultado encontrado para: <strong>${escapeHtml(query)}</strong>
+              <br><br>
+              Tente uma variação do nome, por exemplo sem apóstrofo, sem subtítulo ou com o nome em inglês.
             </div>
           `;
 
@@ -414,6 +421,7 @@
       resultsBox.innerHTML = games.map(game => {
         const hasPS4 = game.platforms.includes("PS4");
         const hasPS5 = game.platforms.includes("PS5");
+        const notIdentified = game.platformType === "Não identificado";
 
         return `
           <section class="card result-card">
@@ -425,7 +433,7 @@
               <div class="badges">
                 ${hasPS4 ? `<span class="badge ps4">PS4</span>` : ""}
                 ${hasPS5 ? `<span class="badge ps5">PS5</span>` : ""}
-                <span class="badge normal">${escapeHtml(game.platformType)}</span>
+                <span class="badge ${notIdentified ? "warning" : "normal"}">${escapeHtml(game.platformType)}</span>
                 ${game.onSale ? `<span class="badge sale">Em promoção</span>` : `<span class="badge normal">Sem promoção detectada</span>`}
               </div>
 
@@ -442,7 +450,10 @@
               </div>
 
               <div class="small">
-                Classificação feita automaticamente com base nos dados retornados pela Store.
+                ${notIdentified
+                  ? "A plataforma não veio claramente nos dados retornados. Confira no link oficial da Store antes de concluir."
+                  : "Classificação feita automaticamente com base nos dados retornados pela Store."
+                }
               </div>
             </div>
           </section>
@@ -470,6 +481,11 @@
         }
 
         lines.push(`Promoção: ${game.onSale ? "Sim" : "Não detectada"}`);
+
+        if (game.platformType === "Não identificado") {
+          lines.push("Obs: conferir plataforma no link oficial.");
+        }
+
         lines.push("");
       });
 
