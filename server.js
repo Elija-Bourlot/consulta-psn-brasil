@@ -149,7 +149,8 @@ function findProductArrays(obj) {
           item.localizedName ||
           item.playable_platform ||
           item.platforms ||
-          item.skus
+          item.skus ||
+          item.default_sku
         )
       );
 
@@ -183,7 +184,7 @@ function extractGame(item) {
   const platforms = extractPlatforms(item, name);
   const price = extractPrice(item);
   const image = extractImage(item);
-  const storeUrl = extractStoreUrl(item, name);
+  const storeUrl = createSafeStoreUrl(name);
 
   return {
     id: item.id || item.conceptId || item.product_id || item.skuId || name,
@@ -308,6 +309,9 @@ function extractPrice(item) {
 
   if (item.default_sku) candidates.push(item.default_sku);
   if (Array.isArray(item.skus)) candidates.push(...item.skus);
+  if (item.price) candidates.push(item.price);
+  if (item.priceInfo) candidates.push(item.priceInfo);
+  if (item.price_info) candidates.push(item.price_info);
 
   candidates.push(item);
 
@@ -317,48 +321,98 @@ function extractPrice(item) {
     current =
       current ||
       candidate.display_price ||
-      candidate.price ||
+      candidate.displayPrice ||
       candidate.current_price ||
+      candidate.currentPrice ||
       candidate.discounted_price ||
+      candidate.discountedPrice ||
       candidate.formattedPrice ||
+      candidate.formatted_price ||
+      candidate.actual_price ||
+      candidate.actualPrice ||
       "";
 
     original =
       original ||
       candidate.display_original_price ||
+      candidate.displayOriginalPrice ||
       candidate.original_price ||
+      candidate.originalPrice ||
       candidate.strikethrough_price ||
+      candidate.strikethroughPrice ||
       candidate.list_price ||
+      candidate.listPrice ||
+      candidate.base_price ||
+      candidate.basePrice ||
       "";
 
     discount =
       discount ||
       candidate.discount_text ||
+      candidate.discountText ||
       candidate.discount ||
       candidate.discount_percent ||
+      candidate.discountPercent ||
       "";
   }
 
-  const fullText = JSON.stringify(item);
+  const allPrices = findAllBrazilianPrices(item);
 
-  if (!current) {
-    const priceMatch = fullText.match(/R\$\s?[\d.,]+/);
-    if (priceMatch) current = priceMatch[0];
+  if (!current && allPrices.length) {
+    current = allPrices[0];
   }
+
+  if (!original && allPrices.length > 1) {
+    original = allPrices.find(price => price !== current) || "";
+  }
+
+  const fullText = JSON.stringify(item).toLowerCase();
 
   const onSale =
     Boolean(discount) ||
     Boolean(original && current && original !== current) ||
-    fullText.toLowerCase().includes("discount") ||
-    fullText.toLowerCase().includes("sale") ||
-    fullText.toLowerCase().includes("promo");
+    fullText.includes("discount") ||
+    fullText.includes("sale") ||
+    fullText.includes("promo") ||
+    fullText.includes("promoção") ||
+    fullText.includes("desconto");
 
   return {
-    current: current || "Preço não encontrado",
+    current: current || "Preço não encontrado na busca",
     original,
     discount,
     onSale
   };
+}
+
+function findAllBrazilianPrices(obj) {
+  const prices = [];
+
+  function walk(value) {
+    if (value === null || value === undefined) return;
+
+    if (typeof value === "string") {
+      const matches = value.match(/R\$\s?[\d.]+,\d{2}/g);
+
+      if (matches) {
+        matches.forEach(price => prices.push(price));
+      }
+
+      return;
+    }
+
+    if (typeof value === "object") {
+      if (Array.isArray(value)) {
+        value.forEach(walk);
+      } else {
+        Object.values(value).forEach(walk);
+      }
+    }
+  }
+
+  walk(obj);
+
+  return [...new Set(prices)];
 }
 
 function extractImage(item) {
@@ -383,12 +437,7 @@ function extractImage(item) {
   return image ? image.url || image.src || image.image_url : "";
 }
 
-function extractStoreUrl(item, name) {
-  if (item.url) {
-    if (String(item.url).startsWith("http")) return item.url;
-    return "https://store.playstation.com/pt-br" + item.url;
-  }
-
+function createSafeStoreUrl(name) {
   return `https://store.playstation.com/pt-br/search/${encodeURIComponent(name)}`;
 }
 
@@ -396,7 +445,7 @@ function removeDuplicates(games) {
   const map = new Map();
 
   games.forEach(game => {
-    const key = normalizeText(game.name) + "|" + game.currentPrice;
+    const key = normalizeText(game.name);
 
     if (!map.has(key)) {
       map.set(key, game);
@@ -408,6 +457,27 @@ function removeDuplicates(games) {
 
       existing.platforms = [...existingPlatforms];
       existing.platformType = classifyPlatform(existing.platforms);
+
+      if (
+        existing.currentPrice === "Preço não encontrado na busca" &&
+        game.currentPrice !== "Preço não encontrado na busca"
+      ) {
+        existing.currentPrice = game.currentPrice;
+      }
+
+      if (!existing.originalPrice && game.originalPrice) {
+        existing.originalPrice = game.originalPrice;
+      }
+
+      if (!existing.discount && game.discount) {
+        existing.discount = game.discount;
+      }
+
+      existing.onSale = existing.onSale || game.onSale;
+
+      if (!existing.image && game.image) {
+        existing.image = game.image;
+      }
     }
   });
 
